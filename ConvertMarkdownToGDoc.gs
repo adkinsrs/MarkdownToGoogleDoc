@@ -25,7 +25,7 @@ function onOpen() {
 function convertFromMarkdown() {
   var selection = DocumentApp.getActiveDocument().getSelection();
   if (selection) {
-    var elements = selection.getSelectedElements();
+    var elements = selection.getRangeElements();
     for (var i = 0; i < elements.length; i++) {    
       processElement(elements[i]);
     }
@@ -36,12 +36,11 @@ function convertFromMarkdown() {
 
 // Process current element
 function processElement(elt) {
-  var text;
   //TODO:  Handle partial elements (like in the Google Docs Apps Script examples)
   var element = elt.getElement();
   // Only valid elements that can be edited as text; skip images and
   // other non-text elements.
-  if (element.editAsText) {
+  if (element.editAsText()) {
     var elementText = element.asText();
     processText(elementText);
   }
@@ -51,95 +50,69 @@ function processElement(elt) {
 function processText(text) {
   // Found it easier to process asterisk and underscore tags seperate instead of combining into one regex
   handleBoldAsterisk(text);
-  //handleBoldUnderscore(text);
-  //handleItalicAsterisk(text);
+  handleBoldUnderscore(text);
+  handleItalicAsterisk(text);
   handleItalicUnderscore(text);
-  //handleStrikethrough(text);
+  handleStrikethrough(text);
 }
 
-function handleBoldAsterisk(text) {
+function handleBoldAsterisk(text) {   
   var coords = handleEnclosedText("\\*{2}", text);
   // Only go further if new tags within Text element were found
-  if (coords[0] !== '') {
-    var end_string = formNewTextString(coords, text);
+  if (coords[0]) {
+    text.setBold(coords[0], coords[1]-1, true);     
     // Recursively call command until all tag pairs have been processed
-    if (end_string.length > 0) {
-      text.appendText(end_string);
-      handleBoldAsterisk(text);
-    }
-    // Bold after the recursive call is bolded
-    text.setBold(coords[0], coords[1]-1, true);    
+    handleBoldAsterisk(text);   
   }
 }
 
 function handleBoldUnderscore(text) {
   var coords = handleEnclosedText("_{2}", text);
   // Only go further if new tags within Text element were found
-  if (coords[0] !== '') {
-    var end_string = formNewTextString(coords, text);
+  if (coords[0]) {
+    text.setBold(coords[0], coords[1]-1, true);     
     // Recursively call command until all tag pairs have been processed
-    if (end_string.length > 0) {
-      text.appendText(end_string);
-      handleBoldUnderscore(text);
-    }
-    // Bold after the recursive call is bolded
-    text.setBold(coords[0], coords[1]-1, true);    
+    handleBoldAsterisk(text);   
   }
 }
 
-function handleItalicAsterisk(text) {
+function handleItalicAsterisk(text) {     
   var coords = handleEnclosedText("\\*{1}", text);
   // Only go further if new tags within Text element were found
-  if (coords[0] !== '') {
-    var end_string = formNewTextString(coords, text);
+  if (coords[0]) {
+    text.setItalic(coords[0], coords[1]-1, true);      
     // Recursively call command until all tag pairs have been processed
-    if (end_string.length > 0) {
-      text.appendText(end_string);
-      handleItalicAsterisk(text);
-    }
-    // Italicize after the recursive call is italicized
-    text.setItalic(coords[0], coords[1]-1, true);    
+      handleItalicUnderscore(text);
   }
 }
 
-function handleItalicUnderscore(text) {
+function handleItalicUnderscore(text) {     
   var coords = handleEnclosedText("_{1}", text);
   // Only go further if new tags within Text element were found
-  if (coords[0] !== '') {
-    var end_string = formNewTextString(coords, text); 
+  if (coords[0]) {
+    text.setItalic(coords[0], coords[1]-1, true);      
     // Recursively call command until all tag pairs have been processed
-    if (end_string.length > 0) {
-      text.appendText(end_string);
       handleItalicUnderscore(text);
-    }
-    // Italicize after the recursive call is italicized
-    text.setItalic(coords[0], coords[1]-1, true);    
   }
 }
 
-function handleStrikethrough(text) {
+function handleStrikethrough(text) {     
   var coords = handleEnclosedText("~{2}", text);
   // Only go further if new tags within Text element were found
-  if (coords[0] !== '') {
-    var end_string = formNewTextString(coords, text); 
+  if (coords[0]) {
+    text.setSuperscript(coords[0], coords[1]-1, true);     
     // Recursively call command until all tag pairs have been processed
-    if (end_string.length > 0) {
-      text.appendText(end_string);
-      handleStrikethrough(text);
-    }
-    // Strikethrough after the recursive call is done
-    text.setStrikethrough(coords[0], coords[1]-1, true);    
+    handleStrikethrough(text);   
   }
 }
 
 // Handle Markdown symbols that enclose a formatted item, such as **item**
 function handleEnclosedText(regex, text) {
-  var coords = [];
-  var orig_text = text.getText();
+  var coords = [];  
   var first_elt = text.findText(regex);
   // If first tag doesn't exist, don't bother with rest
   if (! first_elt) {
-    coords.push('', '');
+    return coords;
   } else {
     // Get coords of first elt
     var first_start = first_elt.getStartOffset();
@@ -149,8 +122,8 @@ function handleEnclosedText(regex, text) {
     // Same deal with first tag, since a pair is needed
     if (! second_elt) {
       // If no second elt, then just restore original text
-      text.setText(orig_text);
-      coords.push('', '');
+      text.setText(orig_text);  // TODO:  Change, since setting text removes stylizing
+      return coords;
     } else {
       var second_start = second_elt.getStartOffset();
       var second_end = second_elt.getEndOffsetInclusive();
@@ -161,15 +134,4 @@ function handleEnclosedText(regex, text) {
     }
   }
   return coords;
-}
-
-// Break into string pieces not containing the Markdown tags and reform
-function formNewTextString(coords, text) {
-  var beginning = text.getText().substring(0,coords[0]);
-  var enclosed = text.getText().substring(coords[0], coords[1]);
-  var end = text.getText().substring(coords[1]);  
-  // Process end text in next recursive go-around
-  var new_text = beginning + enclosed;
-  text.setText(new_text);
-  return end;
 }
